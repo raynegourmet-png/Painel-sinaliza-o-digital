@@ -1,0 +1,6 @@
+{
+  "name": "Consórcio Matupiri — TV Corporativa & Sinalização Digital",
+  "description": "Sistema de Sinalização Digital (Digital Signage) para TV Corporativa 1080p/4K do Consórcio Matupiri (Modera Engenharia • SCB BIM & GIS).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
