@@ -2,10 +2,25 @@ export type SlideId =
   | 'vinheta'
   | 'boletim'
   | 'destaques'
+  | 'galeria'
   | 'equipe'
   | 'aniversariantes'
   | 'comunicados'
   | 'relogio';
+
+export type GalleryMediaType = 'image' | 'video';
+
+export type GalleryLayoutMode = 'individual' | 'coletivo' | 'carrossel';
+
+export interface GalleryMediaItem {
+  id: string;
+  url: string;
+  mediaType: GalleryMediaType; // 'image' (PNG/JPG) | 'video' (MP4)
+  title: string;
+  caption: string;
+  location: string; // Ex: "BR-319/AM · Km 112", "BR-230/AM · Humaitá"
+  date: string;
+}
 
 export interface HighlightPhoto {
   id: string;
@@ -50,6 +65,7 @@ export interface SlideDurations {
   vinheta: number; // default 9s
   boletim: number; // Capa Expandida + QR Code (default 18s)
   destaquesPerPhoto: number; // default 12s (10 a 15s por destaque)
+  galeria: number; // Galeria Interativa Dinâmica (default 12s)
   equipe: number; // Conheça a Equipe do Mês (default 15s)
   aniversariantes: number; // default 15s
   comunicados: number; // default 15s
@@ -57,18 +73,19 @@ export interface SlideDurations {
 }
 
 export type WeatherLocationPresetId =
+  | 'auto_geo'
   | 'manaus_br319'
   | 'humaita_br230'
   | 'labrea_br230'
+  | 'porto_velho_br319'
   | 'careiro_br319'
-  | 'apui_br230'
-  | 'auto_geo';
+  | 'apui_br230';
 
 export interface SignageConfig {
   customLogoUrl?: string;
   logoVariant?: 'light-badge' | 'dark-adaptive';
   vignetteVideoUrl: string; // MP4 URL or DataURL for the Vinheta
-  vignetteTagline?: string; // Frase da vinheta (ex: "Rode conosco, ande conosco")
+  vignetteTagline?: string; // Frase da vinheta (ex: "Trafegue conosco ⮕")
   vignetteFullscreenEnabled: boolean; // Toggle: Exibir Vinheta em Tela Cheia
   vignetteAsBackground: boolean; // Toggle: Usar Vídeo como Fundo Animado (Glassmorphism)
   boletimUrl: string;
@@ -79,6 +96,9 @@ export interface SignageConfig {
   boletimSummary: string[];
   tickerMessages: string[];
   photos: HighlightPhoto[];
+  galleryItems: GalleryMediaItem[]; // Slide "Mural da Galeria Interativa" (Fotos PNG/JPG & Vídeos MP4)
+  galleryLayoutMode: GalleryLayoutMode; // 'individual' | 'coletivo' | 'carrossel'
+  galleryMosaicCount: 2 | 3 | 4; // Quantidade de itens no Modo Coletivo (Mosaico/Grid)
   teamMembers: TeamMember[]; // Slide "Conheça a Equipe do Mês"
   birthdays: BirthdayPerson[];
   events: ImportantEvent[];
@@ -86,6 +106,7 @@ export interface SignageConfig {
   motivationalQuote: string; // Default: "Segurança e Qualidade na Infraestrutura Rodoviária"
   motivationalAuthor: string;
   weatherLocationId: WeatherLocationPresetId;
+  weatherManualOverrideCity?: string; // Ex: "Manaus", "Humaitá", "Lábrea", "Porto Velho"
   weatherCity: string;
   weatherTemp: number;
   weatherCondition: string;

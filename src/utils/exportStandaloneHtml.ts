@@ -91,6 +91,13 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
     }))
   );
 
+  const embeddedGallery = await Promise.all(
+    (config.galleryItems || []).map(async (g) => ({
+      ...g,
+      url: g.mediaType === 'image' ? await imageUrlToDataUrl(g.url) : g.url
+    }))
+  );
+
   const fallbackCoverDataUrl = await imageUrlToDataUrl(FALLBACK_BOLETIM_COVER);
   const resolvedCover = resolveBoletimCoverUrl(config.boletimUrl, config.boletimCoverUrl);
   const embeddedCoverUrl = await imageUrlToDataUrl(resolvedCover);
@@ -113,6 +120,7 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
     ...config,
     boletimCoverUrl: embeddedCoverUrl,
     photos: embeddedPhotos,
+    galleryItems: embeddedGallery,
     teamMembers: embeddedTeam,
     birthdays: embeddedBirthdays
   };
@@ -282,7 +290,7 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
   </div>
 
   <script>
-    const STORAGE_KEY = 'consorcio_matupiri_tv_config_v5';
+    const STORAGE_KEY = 'consorcio_matupiri_tv_config_v6';
     const REQUIRED_PIN = '0712';
     const INITIAL_QR = ${JSON.stringify(initialQrDataUrl)};
     const FALLBACK_COVER = ${JSON.stringify(fallbackCoverDataUrl)};
@@ -299,6 +307,7 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
 
     let currentSlideIdx = 0;
     let currentPhotoIdx = 0;
+    let currentGalleryIdx = 0;
     let remainingSec = 15;
     let totalSec = 15;
 
@@ -383,6 +392,7 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
       if (config.vignetteFullscreenEnabled !== false) slides.push('vinheta');
       if (config.boletimUrl && config.boletimUrl.trim()) slides.push('boletim');
       if (config.photos && config.photos.length > 0) slides.push('destaques');
+      if (config.galleryItems && config.galleryItems.length > 0) slides.push('galeria');
       slides.push('relogio');
       if (config.teamMembers && config.teamMembers.length > 0) slides.push('equipe');
       if (config.birthdays && config.birthdays.length > 0) slides.push('aniversariantes');
@@ -390,10 +400,24 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
       return slides;
     }
 
+    function onGalleryVideoEnded() {
+      const items = config.galleryItems || [];
+      const step = config.galleryLayoutMode === 'coletivo' ? (config.galleryMosaicCount || 4) : 1;
+      if (currentGalleryIdx + step < items.length) {
+        currentGalleryIdx += step;
+        renderSlide();
+      } else {
+        currentGalleryIdx = 0;
+        const slides = getActiveSlides();
+        currentSlideIdx = (currentSlideIdx + 1) % slides.length;
+        renderSlide();
+      }
+    }
+
     function renderTicker() {
       const items = (config.tickerMessages || []).map(m => '<span class="mx-6">🔹 ' + m + '</span>').join('');
       document.getElementById('footer-ticker').innerHTML = items + items;
-      document.getElementById('weather-temp').textContent = liveWeather.temp + '°C · ' + (config.weatherCity || 'Manaus / BR-319');
+      document.getElementById('weather-temp').textContent = liveWeather.temp + '°C · ' + (config.weatherManualOverrideCity || config.weatherCity || 'Manaus / BR-319');
       document.getElementById('weather-cond').textContent = liveWeather.cond + ' • Umidade ' + liveWeather.humidity + '%';
     }
 
@@ -403,7 +427,7 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
       const slide = slides[currentSlideIdx];
       const stage = document.getElementById('slide-stage');
       document.getElementById('slide-indicator').textContent =
-        '0' + (currentSlideIdx + 1) + ' / 0' + slides.length + ' · ' + slide.toUpperCase();
+        '0' + (currentSlideIdx + 1) + '. ' + slide.toUpperCase() + ' | ⏸ ' + remainingSec + 's';
 
       if (slide === 'vinheta') {
         totalSec = (config.durations && config.durations.vinheta) || 9;
@@ -471,6 +495,45 @@ export async function exportStandaloneHtml(config: SignageConfig): Promise<void>
               </div>
             </div>
           </div>\`;
+      } else if (slide === 'galeria') {
+        totalSec = (config.durations && config.durations.galeria) || 12;
+        remainingSec = totalSec;
+        const gItems = config.galleryItems || [];
+        const mode = config.galleryLayoutMode || 'coletivo';
+        const activeG = gItems[currentGalleryIdx % gItems.length] || gItems[0];
+        if (mode === 'individual') {
+          const mediaTag = activeG.mediaType === 'video'
+            ? '<video src="' + activeG.url + '" autoplay muted playsinline onended="onGalleryVideoEnded()" class="w-full h-full object-cover"></video>'
+            : '<img src="' + activeG.url + '" class="w-full h-full object-cover" />';
+          stage.innerHTML = \`
+            <div class="w-full h-full min-h-0 p-5 flex flex-col justify-between gap-3 fade-enter overflow-hidden">
+              <div class="relative flex-1 min-h-0 rounded-2xl overflow-hidden border-2 border-[#8A05BE] bg-[#141618]">
+                \${mediaTag}
+                <div class="absolute bottom-5 left-5 right-5 p-5 rounded-2xl bg-[#1E2022]/80 backdrop-blur-xl border border-white/20">
+                  <div class="text-xs font-bold uppercase text-[#D178FF]">\${activeG.location} · \${activeG.date}</div>
+                  <h2 class="font-display font-extrabold text-2xl text-white">\${activeG.title}</h2>
+                  <p class="text-xs text-[#F4F5F7]/85 mt-1">\${activeG.caption || ''}</p>
+                </div>
+              </div>
+            </div>\`;
+        } else {
+          const slice = gItems.slice(0, 4);
+          stage.innerHTML = \`
+            <div class="w-full h-full min-h-0 p-5 flex flex-col justify-between gap-3 fade-enter overflow-hidden">
+              <div class="font-display font-extrabold text-xl text-white">Mural da Galeria Interativa — Consórcio Matupiri</div>
+              <div class="flex-1 min-h-0 grid grid-cols-2 grid-rows-2 gap-4 overflow-hidden">
+                \${slice.map((it, idx) => \`
+                  <div class="relative rounded-2xl overflow-hidden border border-[#8A05BE]/70 bg-[#2D3142]">
+                    \${it.mediaType === 'video' ? '<video src="' + it.url + '" autoplay muted playsinline ' + (idx === 0 ? 'onended="onGalleryVideoEnded()"' : 'loop') + ' class="w-full h-full object-cover"></video>' : '<img src="' + it.url + '" class="w-full h-full object-cover" />'}
+                    <div class="absolute bottom-3 left-3 right-3 p-3 rounded-xl bg-[#1E2022]/85 backdrop-blur-md border border-white/15">
+                      <div class="text-[10px] font-bold text-[#D178FF]">\${it.location}</div>
+                      <div class="font-display font-bold text-sm text-white truncate">\${it.title}</div>
+                    </div>
+                  </div>
+                \`).join('')}
+              </div>
+            </div>\`;
+        }
       } else if (slide === 'equipe') {
         totalSec = (config.durations && config.durations.equipe) || 15;
         remainingSec = totalSec;

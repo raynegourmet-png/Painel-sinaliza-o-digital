@@ -10,6 +10,7 @@ import { MatupiriLogo } from './components/MatupiriLogo';
 import { Slide0Vinheta } from './components/Slides/Slide0Vinheta';
 import { Slide1Boletim } from './components/Slides/Slide1Boletim';
 import { Slide2Destaques } from './components/Slides/Slide2Destaques';
+import { SlideGaleriaInterativa } from './components/Slides/SlideGaleriaInterativa';
 import { SlideEquipeMes } from './components/Slides/SlideEquipeMes';
 import { Slide3Aniversariantes } from './components/Slides/Slide3Aniversariantes';
 import { Slide4Comunicados } from './components/Slides/Slide4Comunicados';
@@ -26,6 +27,7 @@ const SLIDE_LABELS: Record<SlideId, string> = {
   vinheta: 'Vinheta',
   boletim: 'Boletim Mensal',
   destaques: 'Mural de Serviços',
+  galeria: 'Galeria Interativa',
   relogio: 'Relógio & Clima',
   equipe: 'Equipe do Mês',
   aniversariantes: 'Aniversariantes',
@@ -48,16 +50,22 @@ export default function App() {
   const [compactHeader, setCompactHeader] = useState<boolean>(false);
 
   const [weatherReport, setWeatherReport] = useState<HighwayWeatherReport>(() =>
-    buildFallbackWeatherReport(config.weatherLocationId, config.weatherCity)
+    buildFallbackWeatherReport(
+      config.weatherLocationId,
+      config.weatherCity,
+      config.weatherManualOverrideCity
+    )
   );
 
-  // Fetch live Open-Meteo 7-day weather forecast on mount, location change, and every 15 minutes
+  // Fetch live Open-Meteo weather forecast via Browser Geolocation / IP / Manual Override
+  // Updates automatically every 30 minutes without reloading the page
   useEffect(() => {
     let isMounted = true;
     const loadWeather = async () => {
       const report = await fetchHighwayWeather(
-        config.weatherLocationId || 'manaus_br319',
-        config.weatherCity
+        config.weatherLocationId || 'auto_geo',
+        config.weatherCity,
+        config.weatherManualOverrideCity
       );
       if (isMounted) {
         setWeatherReport(report);
@@ -65,16 +73,14 @@ export default function App() {
     };
 
     loadWeather();
-    const interval = setInterval(loadWeather, 15 * 60 * 1000);
+    const interval = setInterval(loadWeather, 30 * 60 * 1000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [config.weatherLocationId, config.weatherCity]);
+  }, [config.weatherLocationId, config.weatherCity, config.weatherManualOverrideCity]);
 
-  // Compute active slides dynamically following the exact requested order:
-  // Slide 1A (Vinheta) -> Slide 1B (Boletim) -> Slide 2 (Mural de Serviços) ->
-  // Slide 3 (Relógio & Previsão Semanal) -> Slide 4 (Equipe do Mês) -> Slide 5 (Aniversariantes - condicional)
+  // Compute active slides dynamically including "Mural da Galeria Interativa"
   const activeSlides = useMemo<SlideId[]>(() => {
     const list: SlideId[] = [];
     if (config.vignetteFullscreenEnabled !== false) {
@@ -85,6 +91,9 @@ export default function App() {
     }
     if (config.photos && config.photos.length > 0) {
       list.push('destaques');
+    }
+    if (config.galleryItems && config.galleryItems.length > 0) {
+      list.push('galeria');
     }
     list.push('relogio');
     if (config.teamMembers && config.teamMembers.length > 0) {
@@ -101,32 +110,32 @@ export default function App() {
 
   const [currentSlideIndex, setCurrentSlideIndex] = useState<number>(0);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState<number>(0);
+  const [currentGalleryIndex, setCurrentGalleryIndex] = useState<number>(0);
 
   const safeSlideIndex = currentSlideIndex < activeSlides.length ? currentSlideIndex : 0;
   const currentSlideId: SlideId = activeSlides[safeSlideIndex] || 'relogio';
 
-  const getDurationForSlide = useCallback(
-    (slideId: SlideId, cfg: SignageConfig): number => {
-      switch (slideId) {
-        case 'vinheta':
-          return Math.max(5, cfg.durations.vinheta || 9);
-        case 'boletim':
-          return Math.max(5, cfg.durations.boletim || 18);
-        case 'destaques':
-          return Math.max(5, cfg.durations.destaquesPerPhoto || 12);
-        case 'equipe':
-          return Math.max(5, cfg.durations.equipe || 15);
-        case 'aniversariantes':
-          return Math.max(5, cfg.durations.aniversariantes || 15);
-        case 'comunicados':
-          return Math.max(5, cfg.durations.comunicados || 15);
-        case 'relogio':
-        default:
-          return Math.max(5, cfg.durations.relogio || 15);
-      }
-    },
-    []
-  );
+  const getDurationForSlide = useCallback((slideId: SlideId, cfg: SignageConfig): number => {
+    switch (slideId) {
+      case 'vinheta':
+        return Math.max(5, cfg.durations.vinheta || 9);
+      case 'boletim':
+        return Math.max(5, cfg.durations.boletim || 18);
+      case 'destaques':
+        return Math.max(5, cfg.durations.destaquesPerPhoto || 12);
+      case 'galeria':
+        return Math.max(5, cfg.durations.galeria || 12);
+      case 'equipe':
+        return Math.max(5, cfg.durations.equipe || 15);
+      case 'aniversariantes':
+        return Math.max(5, cfg.durations.aniversariantes || 15);
+      case 'comunicados':
+        return Math.max(5, cfg.durations.comunicados || 15);
+      case 'relogio':
+      default:
+        return Math.max(5, cfg.durations.relogio || 15);
+    }
+  }, []);
 
   const [remainingSeconds, setRemainingSeconds] = useState<number>(() =>
     getDurationForSlide(currentSlideId, config)
@@ -134,13 +143,19 @@ export default function App() {
 
   const totalSlideSeconds = getDurationForSlide(currentSlideId, config);
 
+  // Check if current gallery item is an active MP4 video (if so, video.onended controls advancement, with a 60s safety cap)
+  const isCurrentGalleryItemVideo = useMemo(() => {
+    if (currentSlideId !== 'galeria' || !config.galleryItems?.length) return false;
+    const item = config.galleryItems[currentGalleryIndex % config.galleryItems.length];
+    return item?.mediaType === 'video' && Boolean(item.url);
+  }, [currentSlideId, config.galleryItems, currentGalleryIndex]);
+
   const requestAdminAccess = useCallback(() => {
     if (isAdminOpen) {
       setIsAdminOpen(false);
       return;
     }
     if (isLivePreview) {
-      // Already authenticated during the current preview session
       setIsAdminOpen(true);
       return;
     }
@@ -176,10 +191,37 @@ export default function App() {
       const nextSlideId = activeSlides[normalized];
       setCurrentSlideIndex(normalized);
       setCurrentPhotoIndex(0);
+      setCurrentGalleryIndex(0);
       setRemainingSeconds(getDurationForSlide(nextSlideId, config));
     },
     [activeSlides, config, getDurationForSlide]
   );
+
+  // Advance from a finished MP4 video in the Interactive Gallery
+  const handleGalleryVideoEnded = useCallback(() => {
+    const step =
+      config.galleryLayoutMode === 'coletivo' ? config.galleryMosaicCount || 4 : 1;
+    if (
+      config.galleryItems &&
+      currentGalleryIndex + step < config.galleryItems.length
+    ) {
+      setCurrentGalleryIndex((g) => g + step);
+      setRemainingSeconds(getDurationForSlide('galeria', config));
+    } else {
+      const nextIdx = (safeSlideIndex + 1) % activeSlides.length;
+      const nextId = activeSlides[nextIdx];
+      setCurrentSlideIndex(nextIdx);
+      setCurrentPhotoIndex(0);
+      setCurrentGalleryIndex(0);
+      setRemainingSeconds(getDurationForSlide(nextId, config));
+    }
+  }, [
+    activeSlides,
+    config,
+    currentGalleryIndex,
+    getDurationForSlide,
+    safeSlideIndex
+  ]);
 
   // Real-time 1-second clock & slide loop engine
   useEffect(() => {
@@ -195,7 +237,7 @@ export default function App() {
           return prev - 1;
         }
 
-        // Time expired for current step
+        // 1. Sub-steps inside "Mural de Serviços do Boletim"
         if (
           currentSlideId === 'destaques' &&
           config.photos.length > 1 &&
@@ -205,10 +247,22 @@ export default function App() {
           return getDurationForSlide('destaques', config);
         }
 
+        // 2. Sub-steps inside "Galeria Interativa"
+        if (currentSlideId === 'galeria' && config.galleryItems?.length > 1) {
+          const step =
+            config.galleryLayoutMode === 'coletivo' ? config.galleryMosaicCount || 4 : 1;
+          if (currentGalleryIndex + step < config.galleryItems.length) {
+            setCurrentGalleryIndex((g) => g + step);
+            return getDurationForSlide('galeria', config);
+          }
+        }
+
+        // 3. Advance to next main slide
         const nextIdx = (safeSlideIndex + 1) % activeSlides.length;
         const nextId = activeSlides[nextIdx];
         setCurrentSlideIndex(nextIdx);
         setCurrentPhotoIndex(0);
+        setCurrentGalleryIndex(0);
         return getDurationForSlide(nextId, config);
       });
     }, 1000);
@@ -217,6 +271,7 @@ export default function App() {
   }, [
     activeSlides,
     config,
+    currentGalleryIndex,
     currentPhotoIndex,
     currentSlideId,
     getDurationForSlide,
@@ -286,6 +341,7 @@ export default function App() {
     setIsAdminOpen(false);
     setCurrentSlideIndex(0);
     setCurrentPhotoIndex(0);
+    setCurrentGalleryIndex(0);
     const firstSlide: SlideId =
       draftConfig.vignetteFullscreenEnabled !== false
         ? 'vinheta'
@@ -301,6 +357,7 @@ export default function App() {
     saveSignageConfig(newConfig);
     setCurrentSlideIndex(0);
     setCurrentPhotoIndex(0);
+    setCurrentGalleryIndex(0);
     const firstSlide: SlideId =
       newConfig.vignetteFullscreenEnabled !== false
         ? 'vinheta'
@@ -317,9 +374,9 @@ export default function App() {
   });
 
   const formattedHeaderDate = currentTime.toLocaleDateString('pt-BR', {
-    weekday: 'long',
+    weekday: 'short',
     day: '2-digit',
-    month: 'long'
+    month: 'short'
   });
 
   const progressPercentage =
@@ -369,11 +426,11 @@ export default function App() {
         </div>
       )}
 
-      {/* 1. HEADER CORPORATIVO */}
+      {/* 1. HEADER CORPORATIVO (COMPACT NAV PILL + EXPANDED WEATHER BLOCK) */}
       <header
         className={`${
-          compactHeader ? 'h-14 px-4' : 'h-16 lg:h-[72px] px-4 lg:px-7'
-        } bg-[#1E2022] border-b border-white/10 flex items-center justify-between gap-4 shrink-0 z-20 transition-all`}
+          compactHeader ? 'h-14 px-4' : 'h-16 lg:h-[74px] px-4 lg:px-6'
+        } bg-[#1E2022] border-b border-white/10 flex items-center justify-between gap-3 shrink-0 z-20 transition-all`}
       >
         {/* Left: Official Consórcio Matupiri Logo */}
         <MatupiriLogo
@@ -382,66 +439,120 @@ export default function App() {
           customLogoUrl={config.customLogoUrl}
         />
 
-        {/* Center: Discrete Slide Navigation & Loop Status */}
+        {/* Center: Reduced & Discreet Topic Pill (e.g. "07. Comunicados | ⏸ 12s") */}
         <nav
-          aria-label="Programação de Slides"
-          className="hidden xl:flex items-center gap-1 bg-[#2D3142]/70 p-1 rounded-xl border border-white/10"
+          aria-label="Tópico em Exibição"
+          className="hidden lg:flex items-center gap-1.5 bg-[#2D3142]/65 px-2.5 py-1 rounded-xl border border-white/10 max-w-fit shrink-0"
         >
-          {activeSlides.map((slideId, idx) => {
-            const isCurrent = idx === safeSlideIndex;
-            return (
-              <button
-                key={slideId}
-                type="button"
-                onClick={() => goToSlide(idx)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  isCurrent
-                    ? 'bg-[#8A05BE] text-white font-semibold shadow-sm'
-                    : 'text-[#F4F5F7]/70 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <span className="font-mono-tabular mr-1 opacity-75">0{idx + 1}.</span>
-                <span>{SLIDE_LABELS[slideId]}</span>
-              </button>
-            );
-          })}
+          <button
+            type="button"
+            onClick={() => goToSlide(safeSlideIndex - 1)}
+            className="w-5 h-5 rounded-md hover:bg-white/10 text-[#F4F5F7]/60 hover:text-white flex items-center justify-center text-[10px] transition-colors cursor-pointer"
+            title="Slide Anterior (Seta Esquerda)"
+          >
+            <i className="fa-solid fa-chevron-left" />
+          </button>
 
-          <div className="h-4 w-[1px] bg-white/15 mx-1" />
+          {/* Compact Topic Selector */}
+          <div className="flex items-center gap-1">
+            {activeSlides.map((slideId, idx) => {
+              const isCurrent = idx === safeSlideIndex;
+              if (!isCurrent) {
+                return (
+                  <button
+                    key={slideId}
+                    type="button"
+                    onClick={() => goToSlide(idx)}
+                    className="w-5 h-5 rounded-md text-[10px] font-mono-tabular text-[#F4F5F7]/50 hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
+                    title={`Ir para 0${idx + 1}. ${SLIDE_LABELS[slideId]}`}
+                  >
+                    0{idx + 1}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  key={slideId}
+                  type="button"
+                  onClick={() => goToSlide((idx + 1) % activeSlides.length)}
+                  className="px-2.5 py-0.5 rounded-lg bg-[#8A05BE] text-white text-[11px] font-semibold tracking-tight whitespace-nowrap flex items-center gap-1 shadow-sm cursor-pointer"
+                  title="Tópico atual (Clique para avançar)"
+                >
+                  <span className="font-mono-tabular opacity-85">0{idx + 1}.</span>
+                  <span>{SLIDE_LABELS[slideId]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => goToSlide(safeSlideIndex + 1)}
+            className="w-5 h-5 rounded-md hover:bg-white/10 text-[#F4F5F7]/60 hover:text-white flex items-center justify-center text-[10px] transition-colors cursor-pointer"
+            title="Próximo Slide (Seta Direita)"
+          >
+            <i className="fa-solid fa-chevron-right" />
+          </button>
+
+          <span className="text-white/25 text-xs select-none">|</span>
 
           <button
             type="button"
             onClick={() => setIsPaused((p) => !p)}
-            className="px-2.5 py-1 rounded-lg text-xs font-mono-tabular text-[#F4F5F7]/80 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+            className="px-1.5 py-0.5 rounded-md text-[11px] font-mono-tabular text-[#F4F5F7]/80 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
             title={isPaused ? 'Retomar Loop Automático (Espaço)' : 'Pausar Loop Automático (Espaço)'}
           >
-            <i className={`fa-solid ${isPaused ? 'fa-play text-[#D178FF]' : 'fa-pause'}`} />
+            <i className={`fa-solid ${isPaused ? 'fa-play text-[#D178FF]' : 'fa-pause'} text-[9px]`} />
             <span>{remainingSeconds}s</span>
           </button>
         </nav>
 
-        {/* Right: Live Open-Meteo Weather Forecast, Real-Time Clock, Fullscreen & Discrete Admin Gear */}
-        <div className="flex items-center gap-3 lg:gap-5 shrink-0">
-          {/* Weather Module */}
-          <div className="hidden md:flex items-center gap-2.5 bg-[#2D3142]/80 px-3.5 py-1.5 rounded-xl border border-white/10">
-            <i className={`${weatherReport.iconClass} text-base`} />
-            <div>
-              <div className="flex items-center gap-1.5 text-xs font-bold text-white whitespace-nowrap">
-                <span className="font-mono-tabular">{weatherReport.currentTemp}°C</span>
-                <span className="text-white/30">·</span>
-                <span className="max-w-[160px] truncate">{weatherReport.locationLabel}</span>
-              </div>
-              <div className="text-[10px] text-[#F4F5F7]/70 whitespace-nowrap">
-                {weatherReport.conditionLabel} • Umidade {weatherReport.humidity}%
+        {/* Right: Expanded Weather Forecast Card + Real-Time Clock + Controls */}
+        <div className="flex items-center gap-3 lg:gap-4 shrink-0">
+          {/* Expanded Live Weather Card */}
+          <div className="hidden sm:flex items-center gap-3.5 bg-gradient-to-r from-[#2D3142] to-[#252836] px-4 py-1.5 rounded-2xl border border-[#8A05BE]/55 shadow-[0_4px_20px_rgba(138,5,190,0.2)]">
+            {/* Animated Weather Icon Box */}
+            <div className="w-10 h-10 rounded-xl bg-[#1E2022] border border-white/10 flex items-center justify-center shrink-0 shadow-inner">
+              <i className={`${weatherReport.iconClass} text-xl`} />
+            </div>
+
+            {/* Temperature + Condition + Real-Time City Name */}
+            <div className="flex items-center gap-3.5">
+              <div className="flex flex-col justify-center">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-mono-tabular font-extrabold text-xl lg:text-2xl text-white leading-none">
+                    {weatherReport.currentTemp}°C
+                  </span>
+                  <span className="text-[11px] font-bold text-[#D178FF] whitespace-nowrap">
+                    {weatherReport.conditionLabel}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-[#F4F5F7]/85 font-medium mt-0.5">
+                  <i
+                    className={`fa-solid ${
+                      weatherReport.sourceType === 'gps'
+                        ? 'fa-location-crosshairs text-emerald-400'
+                        : 'fa-location-dot text-[#D178FF]'
+                    } text-[10px]`}
+                  />
+                  <span className="max-w-[210px] truncate font-semibold text-white">
+                    {weatherReport.locationLabel}
+                  </span>
+                  <span className="text-white/35">·</span>
+                  <span className="text-[10px] text-[#F4F5F7]/70 font-mono-tabular">
+                    💧 {weatherReport.humidity}%
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Digital Clock & Date */}
-          <div className="text-right">
+          <div className="text-right pl-1">
             <div className="font-mono-tabular font-extrabold text-xl lg:text-2xl text-white tracking-tight leading-none">
               {formattedClock}
             </div>
-            <div className="text-[11px] lg:text-xs text-[#F4F5F7]/75 capitalize mt-0.5 whitespace-nowrap">
+            <div className="text-[11px] text-[#F4F5F7]/75 capitalize mt-0.5 whitespace-nowrap">
               {formattedHeaderDate}
             </div>
           </div>
@@ -510,6 +621,23 @@ export default function App() {
             photoRemainingSeconds={remainingSeconds}
             photoDurationSeconds={totalSlideSeconds}
             boletimMonth={config.boletimMonth}
+            config={config}
+          />
+        )}
+
+        {currentSlideId === 'galeria' && (
+          <SlideGaleriaInterativa
+            items={config.galleryItems || []}
+            layoutMode={config.galleryLayoutMode || 'coletivo'}
+            mosaicCount={config.galleryMosaicCount || 4}
+            activeIndex={currentGalleryIndex}
+            onSelectIndex={(idx) => {
+              setCurrentGalleryIndex(idx);
+              setRemainingSeconds(getDurationForSlide('galeria', config));
+            }}
+            onVideoEnded={isCurrentGalleryItemVideo ? handleGalleryVideoEnded : undefined}
+            remainingSeconds={remainingSeconds}
+            totalSeconds={totalSlideSeconds}
             config={config}
           />
         )}

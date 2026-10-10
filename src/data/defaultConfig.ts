@@ -1,6 +1,6 @@
 import { SignageConfig } from '../types/signage';
 
-export const STORAGE_KEY = 'consorcio_matupiri_tv_config_v5';
+export const STORAGE_KEY = 'consorcio_matupiri_tv_config_v6';
 
 export const FALLBACK_BOLETIM_COVER =
   '/src/assets/images/capa_boletim_matupiri_1791664607487.jpg';
@@ -75,6 +75,50 @@ export const DEFAULT_SIGNAGE_CONFIG: SignageConfig = {
       useHeyzinePageImage: false
     }
   ],
+  galleryItems: [
+    {
+      id: 'gal-1',
+      url: '/src/assets/images/br319_supervisao_obra_1791662992342.jpg',
+      mediaType: 'image',
+      title: 'Supervisão de Pavimentação e Controle Tecnológico na BR-319/AM',
+      caption:
+        'Acompanhamento de aplicação de revestimento asfáltico e controle geométrico pela equipe técnica do Consórcio Matupiri.',
+      location: 'BR-319/AM · Trecho Supervisionado',
+      date: 'Outubro 2026'
+    },
+    {
+      id: 'gal-2',
+      url: '/src/assets/images/visita_comitiva_dnit_1791663010960.jpg',
+      mediaType: 'image',
+      title: 'Vistoria Institucional DNIT & Coordenação Modera • SCB',
+      caption:
+        'Apresentação em campo do monitoramento georreferenciado BIM & GIS e avanços físicos das frentes de serviço.',
+      location: 'BR-319/AM · Comitiva Técnica',
+      date: 'Outubro 2026'
+    },
+    {
+      id: 'gal-3',
+      url: '/src/assets/images/br230_transamazonica_ponte_1791663002521.jpg',
+      mediaType: 'image',
+      title: 'Monitoramento Estrutural de Pontes e Obras de Arte Especiais',
+      caption:
+        'Inspeção visual e levantamento aerofotogramétrico com VANT na Rodovia Transamazônica (BR-230/AM).',
+      location: 'BR-230/AM · Subtrecho Humaitá',
+      date: 'Outubro 2026'
+    },
+    {
+      id: 'gal-4',
+      url: '/src/assets/images/drenagem_terraplenagem_am_1791663023047.jpg',
+      mediaType: 'image',
+      title: 'Frentes de Drenagem Profunda e Proteção Ambiental de Taludes',
+      caption:
+        'Assentamento de bueiros celulares e recomposição vegetal de faixas de domínio sob supervisão ambiental.',
+      location: 'BR-319/AM · Drenagem & QSMS',
+      date: 'Outubro 2026'
+    }
+  ],
+  galleryLayoutMode: 'coletivo',
+  galleryMosaicCount: 4,
   teamMembers: [
     {
       id: 'team-1',
@@ -165,6 +209,7 @@ export const DEFAULT_SIGNAGE_CONFIG: SignageConfig = {
     vinheta: 9,
     boletim: 18,
     destaquesPerPhoto: 12,
+    galeria: 12,
     equipe: 15,
     aniversariantes: 15,
     comunicados: 15,
@@ -172,7 +217,8 @@ export const DEFAULT_SIGNAGE_CONFIG: SignageConfig = {
   },
   motivationalQuote: 'Segurança e Qualidade na Infraestrutura Rodoviária',
   motivationalAuthor: 'Consórcio Matupiri — Modera Engenharia • SCB BIM & GIS',
-  weatherLocationId: 'manaus_br319',
+  weatherLocationId: 'auto_geo',
+  weatherManualOverrideCity: '',
   weatherCity: 'Manaus / BR-319 (AM)',
   weatherTemp: 31,
   weatherCondition: 'Parcialmente Nublado • Umidade 74%'
@@ -261,6 +307,11 @@ export function loadSignageConfig(): SignageConfig {
         ...(parsed.durations || {})
       },
       photos: Array.isArray(parsed.photos) ? parsed.photos : DEFAULT_SIGNAGE_CONFIG.photos,
+      galleryItems: Array.isArray(parsed.galleryItems)
+        ? parsed.galleryItems
+        : DEFAULT_SIGNAGE_CONFIG.galleryItems,
+      galleryLayoutMode: parsed.galleryLayoutMode || DEFAULT_SIGNAGE_CONFIG.galleryLayoutMode,
+      galleryMosaicCount: parsed.galleryMosaicCount || DEFAULT_SIGNAGE_CONFIG.galleryMosaicCount,
       teamMembers: Array.isArray(parsed.teamMembers)
         ? parsed.teamMembers
         : DEFAULT_SIGNAGE_CONFIG.teamMembers,

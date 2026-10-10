@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import {
   BirthdayPerson,
+  GalleryLayoutMode,
+  GalleryMediaItem,
+  GalleryMediaType,
   HighlightPhoto,
   ImportantEvent,
   SignageConfig,
@@ -16,7 +19,8 @@ import {
 } from '../data/defaultConfig';
 import { exportStandaloneHtml } from '../utils/exportStandaloneHtml';
 import { MatupiriLogo } from './MatupiriLogo';
-import { WEATHER_LOCATION_PRESETS } from '../utils/weatherService';
+import { QUICK_OVERRIDE_CITIES, WEATHER_LOCATION_PRESETS } from '../utils/weatherService';
+import { SlideGaleriaInterativa } from './Slides/SlideGaleriaInterativa';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -26,7 +30,14 @@ interface AdminModalProps {
   onSave: (newConfig: SignageConfig) => void;
 }
 
-type AdminTab = 'boletim' | 'fotos' | 'equipe' | 'aniversariantes' | 'eventos' | 'tempos';
+type AdminTab =
+  | 'boletim'
+  | 'fotos'
+  | 'galeria'
+  | 'equipe'
+  | 'aniversariantes'
+  | 'eventos'
+  | 'tempos';
 
 export const AdminModal: React.FC<AdminModalProps> = ({
   isOpen,
@@ -49,6 +60,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     boletimPage: '',
     useHeyzinePageImage: false
   });
+
+  const [newGalleryItem, setNewGalleryItem] = useState<{
+    url: string;
+    mediaType: GalleryMediaType;
+    title: string;
+    caption: string;
+    location: string;
+    date: string;
+  }>({
+    url: '',
+    mediaType: 'image',
+    title: '',
+    caption: '',
+    location: 'BR-319/AM · Frente de Serviço',
+    date: 'Outubro 2026'
+  });
+
+  const [galleryPreviewIndex, setGalleryPreviewIndex] = useState<number>(0);
 
   const [newTeamMember, setNewTeamMember] = useState({
     name: '',
@@ -239,6 +268,99 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     });
   };
 
+  const handleMultiGalleryFilesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const files: File[] = Array.from(fileList);
+
+    files.forEach((file, idx) => {
+      const isVideo = file.type.startsWith('video/') || /\.mp4$|\.webm$/i.test(file.name);
+      const cleanTitle = file.name
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const newItem: GalleryMediaItem = {
+            id: `gal-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+            url: reader.result,
+            mediaType: isVideo ? 'video' : 'image',
+            title: cleanTitle || (isVideo ? 'Vídeo de Obra / Evento' : 'Registro Fotográfico de Obra'),
+            caption: isVideo
+              ? 'Registro em vídeo MP4 adicionado à Galeria Interativa do Consórcio Matupiri.'
+              : 'Registro fotográfico adicionado à Galeria Interativa do Consórcio Matupiri.',
+            location: 'BR-319/AM · BR-230/AM',
+            date: `${draft.boletimMonth || 'Outubro'} 2026`
+          };
+          updateDraftAndPersist((prev) => ({
+            ...prev,
+            galleryItems: [...(prev.galleryItems || []), newItem]
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleSingleGalleryFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isVideo = file.type.startsWith('video/') || /\.mp4$|\.webm$/i.test(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setNewGalleryItem((prev) => ({
+          ...prev,
+          url: reader.result as string,
+          mediaType: isVideo ? 'video' : 'image',
+          title:
+            prev.title ||
+            file.name
+              .replace(/\.[^/.]+$/, '')
+              .replace(/[-_]+/g, ' ')
+        }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddGalleryItem = () => {
+    if (!newGalleryItem.url.trim()) return;
+    const detectedType: GalleryMediaType =
+      newGalleryItem.mediaType === 'video' || /\.mp4(\?|$)/i.test(newGalleryItem.url.trim())
+        ? 'video'
+        : 'image';
+
+    const item: GalleryMediaItem = {
+      id: `gal-${Date.now()}`,
+      url: newGalleryItem.url.trim(),
+      mediaType: detectedType,
+      title:
+        newGalleryItem.title.trim() ||
+        (detectedType === 'video' ? 'Registro em Vídeo MP4' : 'Registro Fotográfico da Obra'),
+      caption: newGalleryItem.caption.trim(),
+      location: newGalleryItem.location.trim() || 'BR-319/AM · Consórcio Matupiri',
+      date: newGalleryItem.date.trim() || `${draft.boletimMonth || 'Outubro'} 2026`
+    };
+
+    updateDraftAndPersist((prev) => ({
+      ...prev,
+      galleryItems: [...(prev.galleryItems || []), item]
+    }));
+
+    setNewGalleryItem({
+      url: '',
+      mediaType: 'image',
+      title: '',
+      caption: '',
+      location: 'BR-319/AM · Frente de Serviço',
+      date: `${draft.boletimMonth || 'Outubro'} 2026`
+    });
+  };
+
   const handleAddTeamMember = () => {
     if (!newTeamMember.name.trim() || !newTeamMember.role.trim()) return;
     const item: TeamMember = {
@@ -379,6 +501,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           {[
             { id: 'boletim', label: '1. Vinheta, Boletim & Letreiro', icon: 'fa-solid fa-film' },
             { id: 'fotos', label: `2. Frentes de Serviço (${draft.photos.length})`, icon: 'fa-solid fa-newspaper' },
+            { id: 'galeria', label: `🖼️ Galeria Interativa (${(draft.galleryItems || []).length})`, icon: 'fa-solid fa-photo-film' },
             { id: 'equipe', label: `3. Equipe do Mês (${(draft.teamMembers || []).length})`, icon: 'fa-solid fa-id-badge' },
             { id: 'aniversariantes', label: `4. Aniversariantes (${draft.birthdays.length})`, icon: 'fa-solid fa-cake-candles' },
             { id: 'eventos', label: `5. Datas & Comunicados (${draft.events.length})`, icon: 'fa-solid fa-calendar-days' },
@@ -388,7 +511,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id as AdminTab)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === tab.id
                   ? 'bg-[#8A05BE] text-white shadow-md'
                   : 'bg-[#2D3142]/70 text-[#F4F5F7]/75 hover:text-white hover:bg-[#2D3142]'
@@ -1110,6 +1233,446 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB NOVA: 🖼️ GALERIA INTERATIVA DINÂMICA (FOTOS PNG/JPG & VÍDEOS MP4) */}
+          {activeTab === 'galeria' && (
+            <div className="space-y-6">
+              {/* Top Section: Layout Mode Selector + Instant Live Preview Thumbnail */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                {/* Left (5 cols): Layout Style Checkboxes & Multi-Upload */}
+                <div className="lg:col-span-5 bg-[#2D3142] rounded-xl p-5 border border-[#8A05BE]/60 flex flex-col justify-between space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-display font-bold text-base text-white flex items-center gap-2">
+                        <i className="fa-solid fa-table-columns text-[#D178FF]" />
+                        <span>Formato de Exibição (Layout Style)</span>
+                      </h3>
+                      <span className="px-2 py-0.5 rounded bg-[#8A05BE]/30 border border-[#8A05BE] text-[10px] font-bold text-[#D178FF]">
+                        GALERIA TV
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-[#F4F5F7]/75">
+                      Escolha como as fotos (PNG/JPG) e vídeos curtos (MP4) serão exibidos no slide <strong>Mural da Galeria Interativa</strong>:
+                    </p>
+
+                    {/* 3 Layout Mode Options with Checkbox Visual */}
+                    <div className="space-y-2.5">
+                      {[
+                        {
+                          mode: 'individual' as GalleryLayoutMode,
+                          title: 'MODO INDIVIDUAL (Tela Cheia 1 por 1)',
+                          desc: 'Passa cada foto ou vídeo MP4 em tela cheia com legenda em card elegante de vidro fosco.'
+                        },
+                        {
+                          mode: 'coletivo' as GalleryLayoutMode,
+                          title: 'MODO COLETIVO (Mosaico / Grid)',
+                          desc: 'Organiza 2, 3 ou 4 fotos/vídeos juntas em um layout moderno de colagem corporativa no mesmo slide.'
+                        },
+                        {
+                          mode: 'carrossel' as GalleryLayoutMode,
+                          title: 'MODO CARROSSEL DINÂMICO 3D',
+                          desc: 'Transição em slide 3D com destaque central amplo e cards laterais em perspectiva.'
+                        }
+                      ].map((opt) => {
+                        const isSelected = (draft.galleryLayoutMode || 'coletivo') === opt.mode;
+                        return (
+                          <button
+                            key={opt.mode}
+                            type="button"
+                            onClick={() =>
+                              updateDraftAndPersist((prev) => ({
+                                ...prev,
+                                galleryLayoutMode: opt.mode
+                              }))
+                            }
+                            className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#8A05BE]/25 border-2 border-[#8A05BE] shadow-md'
+                                : 'bg-[#1E2022] border-white/10 hover:border-white/30'
+                            }`}
+                          >
+                            <div
+                              className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border shrink-0 ${
+                                isSelected
+                                  ? 'bg-[#8A05BE] border-[#D178FF] text-white'
+                                  : 'bg-[#2D3142] border-white/25 text-transparent'
+                              }`}
+                            >
+                              <i className="fa-solid fa-check text-[10px]" />
+                            </div>
+                            <div>
+                              <div className="font-display font-bold text-xs text-white">
+                                {opt.title}
+                              </div>
+                              <div className="text-[11px] text-[#F4F5F7]/75 mt-0.5 leading-snug">
+                                {opt.desc}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Sub-option when Coletivo (Mosaic) is active: 2, 3, or 4 items */}
+                    {(draft.galleryLayoutMode || 'coletivo') === 'coletivo' && (
+                      <div className="bg-[#1E2022] p-3 rounded-xl border border-[#8A05BE]/40 flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[#D178FF]">
+                          Mídias por Mosaico:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {([2, 3, 4] as const).map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() =>
+                                updateDraftAndPersist((prev) => ({
+                                  ...prev,
+                                  galleryMosaicCount: num
+                                }))
+                              }
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                                (draft.galleryMosaicCount || 4) === num
+                                  ? 'bg-[#8A05BE] text-white'
+                                  : 'bg-[#2D3142] text-[#F4F5F7]/70 hover:text-white'
+                              }`}
+                            >
+                              {num} Fotos/Vídeos
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Multi-File Upload Box (PNG / JPG / MP4) */}
+                  <div className="pt-3 border-t border-white/10">
+                    <label className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#8A05BE] to-[#680E8A] hover:from-[#9C14D4] hover:to-[#7B1FA2] text-white font-display font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 cursor-pointer shadow-lg transition-all">
+                      <i className="fa-solid fa-cloud-arrow-up text-base" />
+                      <span>Upload Múltiplo (Fotos PNG/JPG &amp; Vídeos MP4)</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+                        multiple
+                        onChange={handleMultiGalleryFilesUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="text-[11px] text-[#F4F5F7]/65 text-center mt-1.5">
+                      Selecione várias fotos ou vídeos curtos MP4 de uma só vez. Vídeos tocam mudos e avançam automaticamente ao terminar.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right (7 cols): Instantaneous Miniature Live Preview */}
+                <div className="lg:col-span-7 bg-[#2D3142] rounded-xl p-4 border-2 border-[#8A05BE] flex flex-col justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <h4 className="font-display font-bold text-sm text-white">
+                        Pré-visualização Instantânea da Galeria na TV (Live Preview)
+                      </h4>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGalleryPreviewIndex((prev) =>
+                            Math.max(0, prev - 1)
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-[#1E2022] hover:bg-[#8A05BE] text-xs text-white cursor-pointer"
+                        title="Item anterior na miniatura"
+                      >
+                        <i className="fa-solid fa-chevron-left" />
+                      </button>
+                      <span className="text-xs font-mono-tabular text-[#D178FF] px-1">
+                        Teste de Layout
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGalleryPreviewIndex(
+                            (prev) =>
+                              (prev + 1) %
+                              Math.max(1, (draft.galleryItems || []).length)
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-[#1E2022] hover:bg-[#8A05BE] text-xs text-white cursor-pointer"
+                        title="Próximo item na miniatura"
+                      >
+                        <i className="fa-solid fa-chevron-right" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 16:9 Scaled TV Screen Preview Container */}
+                  <div className="w-full h-[310px] lg:h-[340px] rounded-xl overflow-hidden border border-white/20 shadow-2xl bg-[#1E2022]">
+                    <SlideGaleriaInterativa
+                      items={draft.galleryItems || []}
+                      layoutMode={draft.galleryLayoutMode || 'coletivo'}
+                      mosaicCount={draft.galleryMosaicCount || 4}
+                      activeIndex={galleryPreviewIndex}
+                      onSelectIndex={(idx) => setGalleryPreviewIndex(idx)}
+                      isMiniPreview
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Section: Add Single Media Item Form + Editable Media List */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Form: Add Individual Media by URL or File */}
+                <div className="lg:col-span-5 bg-[#2D3142] rounded-xl p-5 border border-white/10 space-y-3.5 h-fit">
+                  <h4 className="font-display font-bold text-sm text-white flex items-center gap-2">
+                    <i className="fa-solid fa-plus-circle text-[#D178FF]" />
+                    <span>Adicionar Foto ou Vídeo MP4 Individualmente</span>
+                  </h4>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setNewGalleryItem({ ...newGalleryItem, mediaType: 'image' })}
+                      className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border cursor-pointer ${
+                        newGalleryItem.mediaType === 'image'
+                          ? 'bg-[#8A05BE] border-[#D178FF] text-white'
+                          : 'bg-[#1E2022] border-white/10 text-[#F4F5F7]/70'
+                      }`}
+                    >
+                      <i className="fa-solid fa-image" />
+                      <span>Foto (PNG / JPG)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewGalleryItem({ ...newGalleryItem, mediaType: 'video' })}
+                      className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border cursor-pointer ${
+                        newGalleryItem.mediaType === 'video'
+                          ? 'bg-[#8A05BE] border-[#D178FF] text-white'
+                          : 'bg-[#1E2022] border-white/10 text-[#F4F5F7]/70'
+                      }`}
+                    >
+                      <i className="fa-solid fa-video" />
+                      <span>Vídeo Curto (MP4)</span>
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#F4F5F7]/80 mb-1">
+                      URL da Mídia ou Upload de Arquivo
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newGalleryItem.url}
+                        onChange={(e) =>
+                          setNewGalleryItem({ ...newGalleryItem, url: e.target.value })
+                        }
+                        placeholder="https://exemplo.com/obra.jpg ou video.mp4"
+                        className="flex-1 bg-[#1E2022] border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#8A05BE]"
+                      />
+                      <label className="px-3 py-2 rounded-lg bg-[#1E2022] hover:bg-[#8A05BE]/30 border border-[#8A05BE] text-xs font-semibold text-[#D178FF] flex items-center gap-1.5 cursor-pointer shrink-0">
+                        <i className="fa-solid fa-upload" />
+                        <span>Arquivo</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+                          onChange={handleSingleGalleryFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#F4F5F7]/80 mb-1">
+                      Título da Obra / Evento
+                    </label>
+                    <input
+                      type="text"
+                      value={newGalleryItem.title}
+                      onChange={(e) =>
+                        setNewGalleryItem({ ...newGalleryItem, title: e.target.value })
+                      }
+                      placeholder="Ex: Operação de Pavimentação BR-319/AM"
+                      className="w-full bg-[#1E2022] border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#8A05BE]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#F4F5F7]/80 mb-1">
+                        Local / Rodovia
+                      </label>
+                      <input
+                        type="text"
+                        value={newGalleryItem.location}
+                        onChange={(e) =>
+                          setNewGalleryItem({ ...newGalleryItem, location: e.target.value })
+                        }
+                        placeholder="BR-319/AM · Km 112"
+                        className="w-full bg-[#1E2022] border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#8A05BE]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#F4F5F7]/80 mb-1">
+                        Data / Mês
+                      </label>
+                      <input
+                        type="text"
+                        value={newGalleryItem.date}
+                        onChange={(e) =>
+                          setNewGalleryItem({ ...newGalleryItem, date: e.target.value })
+                        }
+                        placeholder="Outubro 2026"
+                        className="w-full bg-[#1E2022] border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#8A05BE]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#F4F5F7]/80 mb-1">
+                      Legenda Descritiva (Card de Vidro Fosco)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={newGalleryItem.caption}
+                      onChange={(e) =>
+                        setNewGalleryItem({ ...newGalleryItem, caption: e.target.value })
+                      }
+                      placeholder="Breve descrição da atividade ou evento registrado..."
+                      className="w-full bg-[#1E2022] border border-white/15 rounded-lg p-2.5 text-xs text-white outline-none focus:border-[#8A05BE]"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddGalleryItem}
+                    className="w-full py-2.5 rounded-xl bg-[#8A05BE] hover:bg-[#7B1FA2] text-xs font-bold text-white uppercase tracking-wider transition-colors cursor-pointer shadow-lg"
+                  >
+                    + Incluir Mídia na Galeria Interativa
+                  </button>
+                </div>
+
+                {/* Right List: Registered Gallery Items */}
+                <div className="lg:col-span-7 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-display font-bold text-sm text-white">
+                      Mídias Cadastradas na Galeria ({(draft.galleryItems || []).length})
+                    </h4>
+                    <span className="text-xs text-[#F4F5F7]/60">
+                      Clique para editar título, legenda ou remover
+                    </span>
+                  </div>
+
+                  {(draft.galleryItems || []).map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className="bg-[#2D3142] rounded-xl p-3.5 border border-white/10 hover:border-[#8A05BE]/60 flex flex-col sm:flex-row gap-3.5 items-start"
+                    >
+                      <div className="w-full sm:w-36 h-24 rounded-lg overflow-hidden bg-[#1E2022] border border-white/15 shrink-0 relative">
+                        {item.mediaType === 'video' ? (
+                          <video
+                            src={item.url}
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <img
+                            src={item.url}
+                            alt={item.title}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                        <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded bg-[#8A05BE] text-[9px] font-bold text-white uppercase">
+                          {item.mediaType === 'video' ? 'MP4' : 'FOTO'} #{idx + 1}
+                        </span>
+                      </div>
+
+                      <div className="flex-1 w-full space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <input
+                            type="text"
+                            value={item.title}
+                            onChange={(e) =>
+                              updateDraftAndPersist((prev) => ({
+                                ...prev,
+                                galleryItems: (prev.galleryItems || []).map((g) =>
+                                  g.id === item.id ? { ...g, title: e.target.value } : g
+                                )
+                              }))
+                            }
+                            className="flex-1 bg-[#1E2022] border border-white/15 rounded-lg px-2.5 py-1 text-xs font-bold text-white outline-none focus:border-[#8A05BE]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateDraftAndPersist((prev) => ({
+                                ...prev,
+                                galleryItems: (prev.galleryItems || []).filter(
+                                  (g) => g.id !== item.id
+                                )
+                              }))
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-300 text-xs cursor-pointer"
+                            title="Remover mídia"
+                          >
+                            <i className="fa-solid fa-trash-can" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={item.location}
+                            onChange={(e) =>
+                              updateDraftAndPersist((prev) => ({
+                                ...prev,
+                                galleryItems: (prev.galleryItems || []).map((g) =>
+                                  g.id === item.id ? { ...g, location: e.target.value } : g
+                                )
+                              }))
+                            }
+                            placeholder="Local / Rodovia"
+                            className="bg-[#1E2022] border border-white/15 rounded-lg px-2.5 py-1 text-[11px] text-[#D178FF] outline-none"
+                          />
+                          <input
+                            type="text"
+                            value={item.date}
+                            onChange={(e) =>
+                              updateDraftAndPersist((prev) => ({
+                                ...prev,
+                                galleryItems: (prev.galleryItems || []).map((g) =>
+                                  g.id === item.id ? { ...g, date: e.target.value } : g
+                                )
+                              }))
+                            }
+                            placeholder="Data"
+                            className="bg-[#1E2022] border border-white/15 rounded-lg px-2.5 py-1 text-[11px] text-white/80 outline-none"
+                          />
+                        </div>
+
+                        <input
+                          type="text"
+                          value={item.caption}
+                          onChange={(e) =>
+                            updateDraftAndPersist((prev) => ({
+                              ...prev,
+                              galleryItems: (prev.galleryItems || []).map((g) =>
+                                g.id === item.id ? { ...g, caption: e.target.value } : g
+                              )
+                            }))
+                          }
+                          placeholder="Legenda descritiva..."
+                          className="w-full bg-[#1E2022] border border-white/15 rounded-lg px-2.5 py-1 text-[11px] text-[#F4F5F7]/85 outline-none"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -1855,6 +2418,28 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                   <div>
                     <label className="block text-xs text-[#F4F5F7]/80 mb-1">
+                      Galeria Interativa — Fotos/Mosaico (padrão 12s)
+                    </label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={300}
+                      value={draft.durations.galeria || 12}
+                      onChange={(e) =>
+                        updateDraftAndPersist((prev) => ({
+                          ...prev,
+                          durations: {
+                            ...prev.durations,
+                            galeria: Math.max(5, Number(e.target.value) || 12)
+                          }
+                        }))
+                      }
+                      className="w-full bg-[#1E2022] border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white font-mono-tabular"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-[#F4F5F7]/80 mb-1">
                       Relógio Digital &amp; Clima Semanal (padrão 15s)
                     </label>
                     <input
@@ -1881,25 +2466,27 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <div className="flex items-center justify-between">
                   <h3 className="font-display font-bold text-base text-white flex items-center gap-2">
                     <i className="fa-solid fa-cloud-sun-rain text-[#D178FF]" />
-                    <span>Previsão do Tempo Semanal (Open-Meteo API)</span>
+                    <span>Geolocalização Dinâmica &amp; Previsão do Tempo (30 min)</span>
                   </h3>
                   <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono-tabular font-semibold">
-                    7 DIAS AO VIVO
+                    AUTO-SYNC 30 MIN
                   </span>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-[#F4F5F7]/80 mb-1">
-                    Selecionar Cidade / Rodovia para Previsão Semanal de Campo
+                    Modo de Localização (GPS Automático da TV ou Trecho Rodoviário)
                   </label>
                   <select
-                    value={draft.weatherLocationId || 'manaus_br319'}
+                    value={draft.weatherLocationId || 'auto_geo'}
                     onChange={(e) => {
                       const selectedId = e.target.value as WeatherLocationPresetId;
                       const preset = WEATHER_LOCATION_PRESETS.find((p) => p.id === selectedId);
                       updateDraftAndPersist((prev) => ({
                         ...prev,
                         weatherLocationId: selectedId,
+                        weatherManualOverrideCity:
+                          selectedId === 'auto_geo' ? '' : prev.weatherManualOverrideCity,
                         weatherCity: preset ? preset.label : prev.weatherCity
                       }));
                     }}
@@ -1913,21 +2500,66 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs text-[#F4F5F7]/80 mb-1">
-                    Nome Personalizado da Localidade / Frente de Serviço
-                  </label>
+                {/* Manual Override Field for Smart TVs without GPS permission */}
+                <div className="bg-[#1E2022] p-3.5 rounded-xl border border-[#8A05BE]/50 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-[#D178FF]">
+                      Override Manual de Cidade (Caso a Smart TV esteja sem GPS/permissão)
+                    </label>
+                    {draft.weatherManualOverrideCity && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateDraftAndPersist((prev) => ({
+                            ...prev,
+                            weatherManualOverrideCity: '',
+                            weatherLocationId: 'auto_geo'
+                          }))
+                        }
+                        className="text-[11px] text-emerald-400 hover:underline cursor-pointer"
+                      >
+                        Restaurar GPS Automático
+                      </button>
+                    )}
+                  </div>
+
                   <input
                     type="text"
-                    value={draft.weatherCity}
+                    value={draft.weatherManualOverrideCity || ''}
                     onChange={(e) =>
                       updateDraftAndPersist((prev) => ({
                         ...prev,
-                        weatherCity: e.target.value
+                        weatherManualOverrideCity: e.target.value,
+                        weatherCity: e.target.value || prev.weatherCity
                       }))
                     }
-                    className="w-full bg-[#1E2022] border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white"
+                    placeholder="Digite a cidade (ex: Manaus, Humaitá, Lábrea, Porto Velho) ou deixe vazio para GPS/IP"
+                    className="w-full bg-[#2D3142] border border-white/15 rounded-lg px-3.5 py-2 text-xs text-white outline-none focus:border-[#8A05BE]"
                   />
+
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-[#F4F5F7]/60 mr-1">Atalhos:</span>
+                    {QUICK_OVERRIDE_CITIES.map((city) => (
+                      <button
+                        key={city.name}
+                        type="button"
+                        onClick={() =>
+                          updateDraftAndPersist((prev) => ({
+                            ...prev,
+                            weatherManualOverrideCity: city.name,
+                            weatherCity: city.label
+                          }))
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                          draft.weatherManualOverrideCity === city.name
+                            ? 'bg-[#8A05BE] border-[#D178FF] text-white'
+                            : 'bg-[#2D3142] border-white/10 text-[#F4F5F7]/80 hover:text-white'
+                        }`}
+                      >
+                        {city.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div>
